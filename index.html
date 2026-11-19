@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b1020">
+  <title>MNIST · Live Neural Network</title>
+  <style>
+    :root{color-scheme:dark;--bg:#0b1020;--panel:#151d30;--panel2:#10192b;--line:#303a50;--muted:#9ba9c0;--text:#f1f5ff;--accent:#9b8cff;--mint:#58dec7;--red:#ff8e9a}
+    *{box-sizing:border-box}
+    body{margin:0;background:radial-gradient(ellipse 850px 450px at 50% -130px,#25204c 0%,#0b1020 70%);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--text);min-height:100vh}
+    .shell{max-width:1090px;margin:0 auto;padding:44px 24px 68px}
+    .eyebrow{color:var(--mint);letter-spacing:.18em;text-transform:uppercase;font-weight:700;font-size:11px}
+    h1{font-size:clamp(30px,4vw,46px);letter-spacing:-.04em;line-height:1.15;margin:7px 0 11px;font-weight:750}
+    .subhead{margin:0;color:var(--muted);max-width:690px;font-size:15px}
+    .statusline{display:flex;align-items:center;gap:9px;color:var(--muted);margin-top:19px;font-size:12px}
+    .dot{width:8px;height:8px;border-radius:50%;background:#b4a4ff;box-shadow:0 0 0 4px #9b8cff16;flex-shrink:0}
+    .dot.error{background:var(--red);box-shadow:0 0 0 4px #ff8e9a16}
+    .dot.good{background:var(--mint);box-shadow:0 0 0 4px #58dec71c}
+    .layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.04fr);gap:22px;margin-top:29px}
+    .panel{background:linear-gradient(150deg,#192238,#11192b);border:1px solid var(--line);border-radius:19px;padding:25px;box-shadow:0 12px 36px #03071435}
+    .titleline{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:20px}
+    h2{margin:0;font-weight:680;font-size:17px;letter-spacing:-.012em}
+    .tag{border:1px solid #464068;background:#211d3b;color:#c8c0ff;border-radius:6px;font-size:11px;padding:4px 8px;white-space:nowrap}
+    .boardWrap{display:flex;justify-content:center}
+    .boardOuter{position:relative;background:#000;border:1px solid #5d6482;border-radius:13px;box-shadow:0 0 0 6px #ffffff08,0 12px 32px #0005;overflow:hidden;width:min(100%,350px);aspect-ratio:1}
+    #drawing{display:block;width:100%;height:100%;cursor:crosshair;touch-action:none;user-select:none}
+    .canvasHint{pointer-events:none;position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;color:#687087;font-size:15px;letter-spacing:.01em;transition:opacity .17s;padding:32px}
+    .canvasHint.hidden{opacity:0}
+    .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:22px;align-items:center}
+    button{border:1px solid #454c68;background:#222c45;color:var(--text);font-size:13px;font-weight:650;padding:10px 14px;border-radius:9px;cursor:pointer;transition:background .15s,border-color .15s}
+    button:hover{background:#2d3856}
+    button.primary{background:#685bdb;border-color:#8e7fff;color:white}
+    button.primary:hover{background:#7b6df0}
+    button.active{background:#4e3458;border-color:#ac719d;color:#ffe0f0}
+    .sliderrow{margin-left:auto;display:flex;align-items:center;gap:9px;color:var(--muted);font-size:12px}
+    input[type=range]{accent-color:var(--accent);width:90px}
+    .preprocess{display:flex;align-items:center;gap:16px;margin-top:21px;padding-top:20px;border-top:1px solid var(--line)}
+    .pixelFrame{background:#000;border:1px solid #4d5775;border-radius:7px;flex:0 0 90px;width:90px;height:90px;overflow:hidden}
+    #preview{display:block;width:100%;height:100%;image-rendering:pixelated}
+    .microtitle{font-size:12px;font-weight:700;margin-bottom:4px}
+    .microcopy{font-size:12px;color:var(--muted);line-height:1.55}
+    .check{display:flex;gap:8px;align-items:center;margin-top:8px;font-size:12px;color:#d6dbee;cursor:pointer}
+    .check input{accent-color:var(--accent)}
+    .predictTop{display:flex;gap:16px;align-items:center;padding:6px 0 20px;margin-bottom:18px;border-bottom:1px solid var(--line)}
+    .guess{display:flex;align-items:center;justify-content:center;width:110px;height:115px;border-radius:14px;background:linear-gradient(135deg,#302b59,#252342);color:#c9c3ff;font-size:76px;line-height:1;font-weight:770;font-variant-numeric:tabular-nums;flex-shrink:0}
+    .guess.empty{color:#615b7e;font-weight:500}
+    .guessText{min-width:0}
+    .guessTitle{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:700}
+    .guessLabel{font-size:19px;font-weight:700;letter-spacing:-.025em;margin-top:7px}
+    .guessConfidence{font-size:13px;color:var(--mint);margin-top:5px;font-variant-numeric:tabular-nums}
+    .chartTitle{font-size:12px;color:var(--muted);font-weight:660;letter-spacing:.025em;margin-bottom:13px;display:flex;justify-content:space-between}
+    .probabilities{display:flex;flex-direction:column;gap:10px}
+    .probrow{display:grid;grid-template-columns:20px 1fr 53px;align-items:center;gap:10px}
+    .digit{font-size:14px;font-variant-numeric:tabular-nums;font-weight:650;text-align:center;color:#b6c1d5}
+    .track{background:#303952;height:12px;border-radius:5px;overflow:hidden}
+    .fill{height:100%;width:0%;border-radius:5px;background:linear-gradient(90deg,#8374ee,#aca2ff);transition:width .35s ease-out}
+    .probrow.winner .digit{color:var(--mint)}
+    .probrow.winner .fill{background:linear-gradient(90deg,#39bca8,#73ebd3)}
+    .value{text-align:right;color:#b3bfd2;font-size:12px;font-variant-numeric:tabular-nums}
+    .probrow.winner .value{color:var(--mint);font-weight:700}
+    .foot{padding-top:18px;margin-top:21px;border-top:1px solid var(--line);display:flex;justify-content:space-between;gap:10px;color:var(--muted);font-size:11px}
+    .notes{margin-top:22px;color:var(--muted);font-size:12px;line-height:1.65}
+    code{background:#ffffff12;border:1px solid #ffffff12;border-radius:4px;padding:1px 5px;color:#cfc9ff}
+    @media(max-width:780px){.layout{grid-template-columns:1fr}.shell{padding:26px 16px 50px}.panel{padding:20px}.boardOuter{width:min(100%,330px)}.guess{width:95px;height:100px;font-size:68px}}
+    @media(prefers-reduced-motion:reduce){.fill,.canvasHint,button{transition:none}}
+  </style>
+</head>
+<body>
+<div class="shell">
+  <header>
+    <div class="eyebrow">From pixels to probabilities</div>
+    <h1>Draw a digit. Watch the network think.</h1>
+    <p class="subhead">Your NumPy MNIST classifier, live. Draw in the black square; the image is transformed into 28 × 28 pixels and sent to your locally running neural network about once per second.</p>
+    <div class="statusline"><span class="dot" id="statusDot"></span><span id="statusText">Connecting to local Python model…</span></div>
+  </header>
+
+  <main class="layout">
+    <section class="panel">
+      <div class="titleline"><h2>Drawing pad</h2><span class="tag">28 × 28 input</span></div>
+      <div class="boardWrap"><div class="boardOuter">
+        <canvas id="drawing" width="280" height="280" aria-label="Draw a handwritten digit with pointer or touch"></canvas>
+        <div class="canvasHint" id="canvasHint">Write a digit here<br>using your mouse or finger</div>
+      </div></div>
+      <div class="toolbar">
+        <button class="primary" id="penBtn" type="button">✎ Draw</button>
+        <button id="eraseBtn" type="button">Eraser</button>
+        <button id="clearBtn" type="button">Clear</button>
+        <div class="sliderrow"><label for="brush">Brush</label><input id="brush" type="range" min="12" max="42" value="24"><span id="brushValue">24</span></div>
+      </div>
+      <div class="preprocess">
+        <div class="pixelFrame"><canvas id="preview" width="28" height="28" aria-label="Exact 28 by 28 pixels sent to the network"></canvas></div>
+        <div>
+          <div class="microtitle">What the network sees</div>
+          <div class="microcopy">Grayscale • 784 pixels • white-on-black<br>Resized and centered to resemble MNIST</div>
+          <label class="check"><input id="normalize" type="checkbox" checked>Center &amp; scale drawing</label>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="titleline"><h2>Neural network prediction</h2><span class="tag">784 → 128 → 64 → 10</span></div>
+      <div class="predictTop">
+        <div class="guess empty" id="guess">–</div>
+        <div class="guessText">
+          <div class="guessTitle">Predicted class</div>
+          <div class="guessLabel" id="guessLabel">No digit yet</div>
+          <div class="guessConfidence" id="guessConfidence">Start drawing to classify</div>
+        </div>
+      </div>
+      <div class="chartTitle"><span>Softmax output</span><span>Class probability</span></div>
+      <div class="probabilities" id="probabilities"></div>
+      <div class="foot"><span id="updatedAt">Updates as you draw</span><span id="updateEvery">~1 s refresh</span></div>
+    </section>
+  </main>
+  <p class="notes">The app runs completely on your computer using your saved weights. Prediction probabilities can change sharply mid-stroke, especially before the digit is complete. Tip: press <code>E</code> to toggle the eraser or <code>C</code> to clear.</p>
+</div>
+<script>
+(() => {
+  'use strict';
+  const board = document.getElementById('drawing');
+  const ctx = board.getContext('2d', {willReadFrequently: true});
+  const preview = document.getElementById('preview');
+  const previewCtx = preview.getContext('2d');
+  const normalize = document.getElementById('normalize');
+  const hint = document.getElementById('canvasHint');
+  const statusDot = document.getElementById('statusDot');
+  const statusText = document.getElementById('statusText');
+  const guess = document.getElementById('guess');
+  const guessLabel = document.getElementById('guessLabel');
+  const guessConfidence = document.getElementById('guessConfidence');
+  const updatedAt = document.getElementById('updatedAt');
+  const brush = document.getElementById('brush');
+  const penBtn = document.getElementById('penBtn');
+  const eraseBtn = document.getElementById('eraseBtn');
+  const chart = document.getElementById('probabilities');
+
+  let drawing = false, eraser = false, dirty = false, inFlight = false;
+  let revision = 0, previous = null;
+  const rows = [];
+  for (let digit = 0; digit < 10; digit++) {
+    const row = document.createElement('div'); row.className = 'probrow';
+    row.innerHTML = `<span class="digit">${digit}</span><div class="track"><div class="fill"></div></div><span class="value">0.0%</span>`;
+    chart.appendChild(row);
+    rows.push({row, fill: row.querySelector('.fill'), value: row.querySelector('.value')});
+  }
+
+  function setStatus(message, kind='good') {
+    statusText.textContent = message;
+    statusDot.className = 'dot ' + kind;
+  }
+  function fillBlack() {
+    ctx.save();ctx.fillStyle='#000';ctx.fillRect(0,0,board.width,board.height);ctx.restore();
+  }
+  fillBlack();
+  function resetPrediction() {
+    guess.textContent='–';guess.classList.add('empty');
+    guessLabel.textContent='No digit yet';guessConfidence.textContent='Start drawing to classify';
+    rows.forEach(({row,fill,value})=>{row.classList.remove('winner');fill.style.width='0%';value.textContent='0.0%';});
+    updatedAt.textContent='Updates as you draw';
+  }
+  function position(event) {
+    const b = board.getBoundingClientRect();
+    return [(event.clientX-b.left)*board.width/b.width,(event.clientY-b.top)*board.height/b.height];
+  }
+  function markChanged() { dirty=true; revision++; }
+  function drawDot(x,y) {
+    ctx.fillStyle=eraser?'#000':'#fff'; ctx.beginPath();
+    ctx.arc(x,y,Number(brush.value)/2,0,Math.PI*2);ctx.fill();markChanged();
+  }
+  function drawStroke(a,b) {
+    ctx.strokeStyle=eraser?'#000':'#fff';ctx.lineWidth=Number(brush.value);
+    ctx.lineCap='round';ctx.lineJoin='round';ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);ctx.stroke();markChanged();
+  }
+  board.addEventListener('pointerdown',ev=>{
+    if(ev.button !== 0 && ev.pointerType === 'mouse') return;
+    ev.preventDefault();board.setPointerCapture(ev.pointerId);
+    drawing=true;previous=position(ev);drawDot(...previous);hint.classList.add('hidden');
+  });
+  board.addEventListener('pointermove',ev=>{
+    if(!drawing)return;ev.preventDefault();const next=position(ev);
+    drawStroke(previous,next);previous=next;
+  });
+  function endStroke(){if(!drawing)return;drawing=false;previous=null;runPrediction();}
+  board.addEventListener('pointerup',endStroke);
+  board.addEventListener('pointercancel',endStroke);
+  board.addEventListener('lostpointercapture',endStroke);
+
+  function setEraser(value){eraser=value;eraseBtn.classList.toggle('active',eraser);penBtn.classList.toggle('primary',!eraser);}
+  penBtn.addEventListener('click',()=>setEraser(false));
+  eraseBtn.addEventListener('click',()=>setEraser(true));
+  document.getElementById('brushValue').textContent=brush.value;
+  brush.addEventListener('input',()=>document.getElementById('brushValue').textContent=brush.value);
+  document.getElementById('clearBtn').addEventListener('click',()=>{
+    fillBlack();markChanged();hint.classList.remove('hidden');
+    preparePixels();resetPrediction();dirty=false;setStatus('Model ready · draw a digit');
+  });
+  normalize.addEventListener('change',()=>{markChanged();runPrediction();});
+  window.addEventListener('keydown',ev=>{
+    if(ev.target.matches('input,textarea'))return;
+    if(ev.key.toLowerCase()==='c')document.getElementById('clearBtn').click();
+    if(ev.key.toLowerCase()==='e')setEraser(!eraser);
+  });
+
+  function make28() {
+    const c = document.createElement('canvas'); c.width=28;c.height=28;
+    const cx=c.getContext('2d',{willReadFrequently:true});
+    cx.fillStyle='#000';cx.fillRect(0,0,28,28);
+    cx.imageSmoothingEnabled=true;cx.imageSmoothingQuality='high';
+    return [c,cx];
+  }
+  function preparePixels() {
+    const [working,cx] = make28();
+    if(!normalize.checked) {
+      cx.drawImage(board,0,0,28,28);
+    } else {
+      const data=ctx.getImageData(0,0,280,280).data;
+      let minX=280,minY=280,maxX=-1,maxY=-1;
+      for(let y=0;y<280;y++)for(let x=0;x<280;x++){
+        const k=(y*280+x)*4;
+        if(data[k]>12){minX=Math.min(minX,x);minY=Math.min(minY,y);maxX=Math.max(maxX,x);maxY=Math.max(maxY,y);}
+      }
+      if(maxX>=0) {
+        const cropW=maxX-minX+1,cropH=maxY-minY+1;
+        const s=20/Math.max(cropW,cropH);
+        const w=cropW*s,h=cropH*s;
+        cx.drawImage(board,minX,minY,cropW,cropH,(28-w)/2,(28-h)/2,w,h);
+        // MNIST-inspired intensity center-of-mass alignment.
+        const img=cx.getImageData(0,0,28,28).data;
+        let sum=0,mx=0,my=0;
+        for(let y=0;y<28;y++)for(let x=0;x<28;x++){
+          const intensity=img[(y*28+x)*4]/255;
+          sum+=intensity;mx+=x*intensity;my+=y*intensity;
+        }
+        if(sum>1e-8){
+          const dx=Math.round(13.5-mx/sum),dy=Math.round(13.5-my/sum);
+          const [aligned,alignCtx]=make28();
+          alignCtx.drawImage(working,dx,dy);
+          cx.clearRect(0,0,28,28);cx.drawImage(aligned,0,0);
+        }
+      }
+    }
+    const rgba=cx.getImageData(0,0,28,28);
+    const pixels=new Array(784);
+    let total=0;
+    for(let i=0;i<784;i++){
+      const v=rgba.data[i*4]/255;pixels[i]=v;total+=v;
+    }
+    previewCtx.putImageData(rgba,0,0);
+    return {pixels,empty:total<0.01};
+  }
+  function render(result) {
+    const p=result.probabilities;
+    if(!Array.isArray(p)||p.length!==10)throw Error('Invalid probabilities from server');
+    let winner=result.prediction;
+    guess.textContent=String(winner);guess.classList.remove('empty');
+    guessLabel.textContent=`Digit ${winner}`;
+    guessConfidence.textContent=`${(p[winner]*100).toFixed(1)}% probability`;
+    for(let i=0;i<10;i++){
+      const percent=p[i]*100;rows[i].fill.style.width=`${percent}%`;
+      rows[i].value.textContent=`${percent.toFixed(1)}%`;
+      rows[i].row.classList.toggle('winner',i===winner);
+    }
+    updatedAt.textContent=`Updated ${new Date().toLocaleTimeString()}`;
+  }
+  async function runPrediction(){
+    if(!dirty || inFlight)return;
+    const {pixels,empty}=preparePixels();
+    dirty=false;
+    if(empty){resetPrediction();setStatus('Model ready · draw a digit');return;}
+    const targetRevision=revision;
+    inFlight=true;setStatus('Running your network…');
+    try{
+      const response=await fetch('/predict',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pixels})});
+      const body=await response.json();
+      if(!response.ok)throw Error(body.error||`HTTP ${response.status}`);
+      if(targetRevision===revision){render(body);setStatus('Model ready · live predictions','good');}
+    }catch(e){setStatus(`Prediction error: ${e.message}`,'error');}
+    finally{inFlight=false;}
+  }
+  setInterval(runPrediction,1000);
+  preparePixels();resetPrediction();
+  fetch('/health').then(r=>{if(!r.ok)throw Error('Server unavailable');return r.json();})
+    .then(()=>setStatus('Model ready · draw a digit','good'))
+    .catch(e=>setStatus(`Cannot connect to Python server: ${e.message}`,'error'));
+})();
+</script>
+</body>
+</html>
