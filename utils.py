@@ -35,7 +35,7 @@ def onehot_to_labels(onehot):
 
 # Plotting
 
-def plot_loss(train_losses, val_losses):
+def plot_loss(train_losses, val_losses, title='Loss over Epochs'):
     epochs = range(len(train_losses))
     plt.figure()
     plt.plot(epochs, train_losses, label='training loss')
@@ -44,6 +44,19 @@ def plot_loss(train_losses, val_losses):
     plt.legend(loc='best')
     plt.xlabel('Epoch')
     plt.ylabel('Loss')
+    plt.title(title)
+    plt.show()
+
+def plot_accuracies(train_accuracies, val_accuracies, title='Accuracy over Epochs'):
+    epochs = range(len(train_accuracies))
+    plt.figure()
+    plt.plot(epochs, train_accuracies, label='training accuracy')
+    plt.plot(epochs, val_accuracies, label='validation accuracy')
+    plt.grid(True)
+    plt.legend(loc='best')
+    plt.xlabel('Epoch')
+    plt.ylabel('Accuracy')
+    plt.title(title)
     plt.show()
 
 
@@ -240,6 +253,8 @@ class layer:
         assert J.shape == (n_out, n_in, d) 
 
         return J
+    
+
 
 class network:
 
@@ -357,98 +372,6 @@ class network:
         return loss
 
 
-    def grad_loss(self, data):
-        ''' 
-        Computes the partial derivatives of the loss function with respect to all parameters in the network. 
-        Returns an two arrays filled with the partial derivatives with respect to each layer's weight matrix and bias vector
-        shape (del_W, del_b) where del_W is a list of matrices and del_b is a list of vectors.
-        '''
-        # Get data
-        x = data[0]
-        y = data[1]
-        d = x.shape[1]
-        layers = self.layers
-        
-
-        # compute network's forward and residuals
-        zs = self(x)
-        res = y - zs[-1] # (n_out, d)
-
-        # initialize lists to store gradients
-        del_W = []
-        del_b = []
-
-        # if its a single layer, use gradients from before
-        if len(layers) == 1:
-            dW, db = layers[0].grad_loss(data)
-            del_W.append(dW)
-            del_b.append(db)
-            return del_W, del_b  
-
-        # Iterate over layers, start with the last layer
-        for i in range(len(layers)):
-
-            # Invert counting order
-            j = len(layers) - 1 - i
-
-            # layer output and params
-            z = zs[j] # (n_curr, d)
-            (n_curr, n_prev) = layers[j].dims 
-            assert z.shape[0] == n_curr, 'wrong layer output dimensions'
-
-            # Edge case: don't compute jacobian for the output layer
-            if j == len(layers) - 1:
-
-                # Output layer params
-                n_out = n_curr
-                n_sec_to_last = n_prev
-                
-                # Use previous layer code to compute gradient.  
-                data_out = (zs[j - 1], y) 
-                del_W_out, del_b_out = layers[j].grad_loss(data_out) 
-                del_W.append(del_W_out) # (n_out, n_prev)
-                del_b.append(del_b_out) # (n_out,)
-
-                # Initial jacobian
-                H = layers[j].jacobian(zs[j - 1]) # (n_out, n_prev, d)
-
-                continue
-
-            # assert shape of current jacobian
-            assert H.shape == (n_out, n_curr, d), 'wrong jacobian shape'
- 
-            # activation derivative and forward derivative 
-            del_phi = np.reshape(z * (1 - z), (1, n_curr, d)) # (1, n_curr, d)
-            mult = H * del_phi # (n_out, n_curr, d) 
-
-            # build partial derivatives for bias 
-            inner_b = np.einsum('ij, ikj -> kj', res, mult) # (n_curr, d)
-            del_b_curr = - np.mean(inner_b, axis=1) # (n_curr,)
-            del_b_curr = np.reshape(del_b_curr, (n_curr, 1))
-
-            # build partial derivatives for weights, edge case for first layer 
-            if j == 0:
-                z_prev = x # (n_in, d)
-            else:
-                z_prev = zs[j - 1] # (n_prev, d)
-
-            # multiply forward derivative with previous output
-            del_W_curr = -(inner_b @ z_prev.T) / d   # (n_curr, n_prev)
-
-            # Store partial derivatives
-            del_W.append(del_W_curr)
-            del_b.append(del_b_curr)
-    
-            if j > 0:
-                J = layers[j].jacobian(z_prev)                 # (n_curr, n_prev, d)
-                H = np.einsum('ijk, jnk -> ink', H, J)         # (n_out, n_prev, d)
-
-        # Reverse order of lists
-        del_W = del_W[::-1]
-        del_b = del_b[::-1]
-
-        return del_W, del_b
-
     def CE_loss(self, data):
         ''' 
         Computes the CE loss of the dataset. From the output of the network, we can use the resulting logits under a softmax to get
@@ -496,18 +419,31 @@ class network:
 
         if loss=="MSE":
             res = y - zs[-1] # (n_out, d)
+            g = layers[-1].del_activation(args[-1]) * res # (n_out, d)
+
 
         if loss=="CE":
-            # compute softmax of output 
+            # softmax output layer and CE loss (log-likelihood loss in Nielsen) 
             from scipy.special import softmax
             p = softmax(args[-1], axis=0) # (n_out, d)
             res = y - p # (n_out, d) 
 
-        # Iterate over layers backwards
-        for i in range(L):
+            # Compute first error vector
+            g = layers[-1].del_activation(args[-1]) * res # (n_out, d)
 
-            # To count backwards, we use j from L-1 to 0 (L-th layer to 1-st layer)
-            j = L - 1 - i
+
+        db = - np.reshape(np.mean(g, axis=1), (args[-1].shape[0], 1)) # (n_out, 1) 
+        dW = - g @ zs[-2].T / d # (n_curr, n_prev)
+
+        del_b.append(db)
+        del_W.append(dW)
+
+
+        # Iterate over layers backwards
+        for i in range(L - 1):
+
+            # To count backwards, we use j from L-2 to 0 (L - 1-th layer to 1-st layer)
+            j = L - 2 - i
 
             # Edge case, input layer
             if j == 0:
@@ -516,48 +452,27 @@ class network:
                 z_prev = zs[j - 1]
             
             # Extract output of previous layer and current layer's arg
-            n_prev = z_prev.shape[0]
             arg = args[j] # (n_curr, d)
             n_curr = arg.shape[0]
 
             # At the output layer, construct the first g
-            if j == L - 1:
-
-                # Get first g and compute partial derivatives at the output layer
-                g = layers[j].del_activation(arg) * res # (n_out, d)
-                gr = np.reshape(g, (n_curr, 1, d)) # (n_out, 1, d)
-                
-                db = - np.mean(gr, axis=2) # (n_out, 1) 
-                dW = - g @ z_prev.T / d
-
-                del_b.append(db)
-                del_W.append(dW)
-
-                h = (layers[j].W).T @ g
-                
-                continue
-
-            g = layers[j].del_activation(arg) * h # (n_curr, d)
-            gr = np.reshape(g, (n_curr,1,d)) # (n_curr, 1, d)
-
+     
+            g = ((layers[j + 1].W).T @ g) * layers[j].del_activation(args[j])
             # Use g to get partial derivatives
-            db = - np.mean(gr, axis=2) # (n_out, 1) 
+            db = - np.reshape(np.mean(g, axis=1), (n_curr, 1)) # (n_out, 1) 
             dW = - g @ z_prev.T / d # (n_curr, n_)
 
             del_b.append(db)
             del_W.append(dW)
             
-            if j > 0:
-                # if we are at the input layer, there is no need to recompute. First weight matrix never appears. Interesting. 
-                h = (layers[j].W).T @ g
         
         del_W = del_W[::-1]
         del_b = del_b[::-1]
 
         return del_W, del_b
 
-
-
+         
+        
 
 
 def compute_accuracy(NN, x, true_labels):
@@ -568,4 +483,87 @@ def compute_accuracy(NN, x, true_labels):
     accuracy = np.mean(true_labels == pred_labels)
     return accuracy
 
+
+def train(NN, train_data, val_data, epochs=20, minibatch_size=50, eta=0.1, verbose=True, loss="CE", lam=0):
+    '''
+    Training function for a single layer using SGD. Must include a test/train split. Performs accuracies and loss calculations 
+    after each epoch. Returns a NN with updated parameters and arrays containing train and test cost and accuracies.
+
+    - L is a layer as defined above. Initial weights and biases already initialized.
+    - training_data is 
+    - epochs is the number of times that the training loop will visit the full training set 
+    - minibatch_size is the size of the minibatch. *Same batching every epoch* TO DO: randomize batches
+    - eta is the learning rate
+    - verbose is a boolean indicating the desire of outputing intermediate loss calculations after each epoch
+    - loss is a string indicating the loss that is used for training
+    - lam is the L2 regularization parameter
+
+    '''
+    # Compute initial training loss
+    loss0 = NN.CE_loss(train_data)
+    train_losses = np.zeros(epochs)
+    val_losses = np.zeros(epochs)
+    train_accuracies = np.zeros(epochs)
+    val_accuracies = np.zeros(epochs)
+    print('Initial Training Loss', loss0)
+
+    x_train = train_data[0]
+    y_train = train_data[1]
+
+    # Compute number of minibatches
+    d_train = x_train.shape[1]
+    n_batches = int(d_train / minibatch_size)
+    
+    for e in tqdm(range(epochs)):
+
+        # Shuffle training data
+        idx = np.random.permutation(d_train)
+
+        x_train = x_train[:, idx]
+        y_train = y_train[:, idx]
+
+        for n in range(n_batches):
+
+            # Organize batch's training samples for SGD
+            # Edge case: last batch may not be big enough. Avoid slicing error
+            if n == n_batches - 1:
+                x_batch = x_train[:, n * minibatch_size :]
+                y_batch = y_train[:, n * minibatch_size :]
+            else:
+                x_batch = x_train[:, n * minibatch_size : (n+1) * minibatch_size]
+                y_batch = y_train[:, n * minibatch_size: (n+1) * minibatch_size]
+
+            data_batch = (x_batch, y_batch)
+
+            # Compute gradients   
+            del_W, del_b = NN.backprop(data_batch, loss=loss)
+
+            # Iterate over layers and update parameters
+            for i in range(len(NN.layers)):
+                
+                # Extract layer gradients
+                del_Wi, del_bi = del_W[i], del_b[i]
+                
+                # Gradient step with (optional) L2 regularization
+                NN.layers[i].W = (1 - lam * eta / d_train) * NN.layers[i].W - eta * del_Wi
+                NN.layers[i].b = NN.layers[i].b - eta * del_bi
+
+
+        # Recompute loss at the end of the epoch
+
+        train_loss = NN.CE_loss(train_data)
+        val_loss = NN.CE_loss(val_data)
+        train_losses[e] = train_loss
+        val_losses[e] = val_loss
+
+        # Compute training and validation accuracies at each epoch
+        train_acc = compute_accuracy(NN, x_train, onehot_to_labels(y_train))
+        val_acc = compute_accuracy(NN, val_data[0], onehot_to_labels(val_data[1]))
+        train_accuracies[e] = train_acc
+        val_accuracies[e] = val_acc
+
+        if verbose==True:
+            print('Loss at epoch e =', e, ':', train_loss)
+
+    return NN, train_losses, val_losses, train_accuracies, val_accuracies
 
