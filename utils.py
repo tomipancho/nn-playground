@@ -1,6 +1,7 @@
 import numpy as np
 from tqdm import tqdm
-import matplotlib.pyplot as plt 
+import matplotlib.pyplot as plt
+import copy
 
 # In this file I will include all classes and functions that I know are working correctly. 
 # Notebooks are for exploration, but to use the functions that in other files/projects this .py script is more appropriate. 
@@ -484,7 +485,9 @@ def compute_accuracy(NN, x, true_labels):
     return accuracy
 
 
-def train(NN, train_data, val_data, epochs=20, minibatch_size=50, eta=0.1, verbose=True, loss="CE", lam=0):
+
+
+def train(NN, train_data, val_data, epochs=20, minibatch_size=50, eta=0.1, verbose=True, loss="CE", lam=0, p_drop=0):
     '''
     Training function for a single layer using SGD. Must include a test/train split. Performs accuracies and loss calculations 
     after each epoch. Returns a NN with updated parameters and arrays containing train and test cost and accuracies.
@@ -497,6 +500,7 @@ def train(NN, train_data, val_data, epochs=20, minibatch_size=50, eta=0.1, verbo
     - verbose is a boolean indicating the desire of outputing intermediate loss calculations after each epoch
     - loss is a string indicating the loss that is used for training
     - lam is the L2 regularization parameter
+    - p_drop is the proportion of hidden layer neurons to be dropped at each mini-batch 
 
     '''
     # Compute initial training loss
@@ -516,6 +520,7 @@ def train(NN, train_data, val_data, epochs=20, minibatch_size=50, eta=0.1, verbo
     
     for e in tqdm(range(epochs)):
 
+        np.random.seed(42)
         # Shuffle training data
         idx = np.random.permutation(d_train)
 
@@ -535,8 +540,22 @@ def train(NN, train_data, val_data, epochs=20, minibatch_size=50, eta=0.1, verbo
 
             data_batch = (x_batch, y_batch)
 
+            # -------- DROPOUT ---------------
+            # Iterate over *hidden* layers to drop-out neurons
+            NN_dropout = copy.deepcopy(NN)
+
+            for i in range(len(NN.layers) - 1):
+
+                # Extract number of neurons to be dropped out at this hidden layer
+                n_curr = NN.layers[i].dims[0]
+
+                # Now we need to make n_curr draws from a binomial distribution: 0 w.p. 1 - p and 1 w.p. p
+                # and set selected biases to a high negative number
+                idxs = np.where(np.random.binomial(1, p_drop, n_curr) == 1)[0]
+                NN_dropout.layers[i].b[idxs] = -1e8 
+
             # Compute gradients   
-            del_W, del_b = NN.backprop(data_batch, loss=loss)
+            del_W, del_b = NN_dropout.backprop(data_batch, loss=loss)
 
             # Iterate over layers and update parameters
             for i in range(len(NN.layers)):
@@ -550,20 +569,28 @@ def train(NN, train_data, val_data, epochs=20, minibatch_size=50, eta=0.1, verbo
 
 
         # Recompute loss at the end of the epoch
+        NN_eval = copy.deepcopy(NN)
+        for i in range(1, len(NN_eval.layers)):
+            NN_eval.layers[i].W *= (1 - p_drop)
 
-        train_loss = NN.CE_loss(train_data)
-        val_loss = NN.CE_loss(val_data)
+        train_loss = NN_eval.CE_loss(train_data)
+        val_loss = NN_eval.CE_loss(val_data)
         train_losses[e] = train_loss
         val_losses[e] = val_loss
 
         # Compute training and validation accuracies at each epoch
-        train_acc = compute_accuracy(NN, x_train, onehot_to_labels(y_train))
-        val_acc = compute_accuracy(NN, val_data[0], onehot_to_labels(val_data[1]))
+        train_acc = compute_accuracy(NN_eval, x_train, onehot_to_labels(y_train))
+        val_acc = compute_accuracy(NN_eval, val_data[0], onehot_to_labels(val_data[1]))
         train_accuracies[e] = train_acc
         val_accuracies[e] = val_acc
 
         if verbose==True:
             print('Loss at epoch e =', e, ':', train_loss)
 
+    # At the end of training, scale the weights outgoing from hidden neurons by p_drop  
+    for i in range(1, len(NN.layers)):
+        NN.layers[i].W = (1 - p_drop) * NN.layers[i].W
+
     return NN, train_losses, val_losses, train_accuracies, val_accuracies
+
 
